@@ -440,7 +440,7 @@ RUN npm install
 CMD ["npm", "start"]
 ```
 
-##### Mistake 2
+#### Mistake 2
 
 `package.json` is not available inside the container:
 
@@ -486,7 +486,7 @@ Successfully built da9b25e9a84a
 Successfully tagged erant10/simpleweb:latest
 ```
 
-##### Mistake 3
+#### Mistake 3
 
 By default, no traffic that is coming into the local network is routed into the container, which has its own **isolated** 
 set of ports that can receive traffic.  
@@ -513,7 +513,7 @@ in our case:
 docker run -p 8080:8080 erant10/simpleweb
 ```
 
-##### Mistake 4
+#### Mistake 4
 
 It is considered bad practice to set up the project inside the image's root directory (since it might cause conflicts 
 with system directories).
