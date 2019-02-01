@@ -418,7 +418,7 @@ repositories will offer an alpine version of their image.
 Usually images in the docker hub has multiple versions with certain additions to the base image. to use those 
 versions we just need to add a tag to the `FROM` command in the `Dockerfile`
 
-##### Mistake 1
+#### Mistake 1
 
 Running `docker build .` will throw the error: `/bin/sh: npm: not found`
 
