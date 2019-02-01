@@ -372,3 +372,188 @@ for example:
     .
     Ready to accept connections
     ```
+
+
+## Section 4 - A real project with Docker
+
+We will create a simple web app with nodeJS, purposely making some common mistakes along the way.
+
+**index.js**
+
+```js
+const express = require('express');
+
+const app = express();
+const port = 8080;
+app.get('/', (req,res) => {
+    res.send('Hi there!');
+});
+
+app.listen(port, () => {
+   console.log(`listening on port ${port}`);
+});
+```
+
+**Dockerfile**
+
+```dockerfile
+# Specify a base image
+FROM alpine
+
+# Install some dependencies
+RUN npm install
+
+# Default command
+CMD ["npm", "start"]
+```
+
+### Alpine
+
+The *alpine* image is **very** lightweight and it contains only a few basic unix programs and it does **not** include 
+node and npm.
+
+In general, alpine is a term in the docker world for an image that is as small and compact as possible. Many popular 
+repositories will offer an alpine version of their image. 
+
+Usually images in the docker hub has multiple versions with certain additions to the base image. to use those 
+versions we just need to add a tag to the `FROM` command in the `Dockerfile`
+
+##### Mistake 1
+
+Running `docker build .` will throw the error: `/bin/sh: npm: not found`
+
+There are 2 possible solutions:
+
+1. Find a different image that has npm pre-installed (from docker hub).
+
+2. build our own image from scratch
+
+**Solution**
+
+We will use the node image
+
+**Dockerfile**
+
+```dockerfile
+FROM node:alpine
+RUN npm install
+CMD ["npm", "start"]
+```
+
+##### Mistake 2
+
+`package.json` is not available inside the container:
+
+```
+npm WARN saveError ENOENT: no such file or directory, open '/package.json'
+```
+
+The only files that are available are the ones that came with the FS snapshot from the node image.
+
+In general, when we build an image, none of the files inside of the project directory are available within the container
+by default unless we **specifically allow it** inside the `Dockerfile`.
+
+**Solution**
+
+The `COPY` instruction is used to move files and folders from our local machine to the file system that is created in 
+the container.
+
+**Dockerfile**
+
+```dockerfile
+FROM node:alpine
+COPY ./ ./
+RUN npm install
+CMD ["npm", "start"]
+```
+
+At this point we were able to create the image successfully.
+
+```
+Sending build context to Docker daemon  4.096kB
+Step 1/4 : FROM node:alpine
+ ---> ebbf98230a82
+Step 2/4 : COPY ./ ./
+ ---> Using cache
+ ---> 5ac48dfbdef2
+Step 3/4 : RUN npm install
+ ---> Using cache
+ ---> 0e68c7ddf32c
+Step 4/4 : CMD ["npm", "start"]
+ ---> Using cache
+ ---> da9b25e9a84a
+Successfully built da9b25e9a84a
+Successfully tagged erant10/simpleweb:latest
+```
+
+##### Mistake 3
+
+By default, no traffic that is coming into the local network is routed into the container, which has its own **isolated** 
+set of ports that can receive traffic.  
+
+Therefore at this point we cannot make any requests to the express server that is listening within the container.
+
+**Solution**
+
+In order to make sure that any request from outside will be redirected into the container, we need to set up an explicit
+**port mapping**.
+
+This is not done inside the `Dockerfile`, because it is a **runtime constraint**, which can only be changed when 
+running a container.
+
+The syntax to port mapping:
+
+```bash
+docker run -p <localhost_incoming_requests_port>:<port_inside_the_container> <image_name> 
+```
+
+in our case:
+
+```bash
+docker run -p 8080:8080 erant10/simpleweb
+```
+
+##### Mistake 4
+
+It is considered bad practice to set up the project inside the image's root directory (since it might cause conflicts 
+with system directories).
+
+**Solution**
+
+Change the Dockerfile with the `WORKDIR <project_folder>` instruction.
+
+Any commands/instructions following the `WORKDIR` command will be executed relative to the specified folder
+
+**Dockerfile**
+
+```dockerfile
+FROM node:alpine
+WORKDIR /usr/app
+COPY ./ ./
+RUN npm install
+CMD ["npm", "start"]
+```
+
+
+##### Note - unnecessary rebuilds
+
+Any time we modify the source files, they will **not** be automatically applied to the project inside the container.
+
+If we want to **automatically** update the file inside the container we will have to change some configuration (which 
+we will do later).
+
+Another option is to rebuild the container and restart the express server, however this means that every change we make 
+to the express server files, the `COPY` instruction will be executed again (since it cannot use a cached version), 
+and then `RUN npm install` again, which will install all the dependencies over and over. 
+
+We can avoid this by splitting the **COPY** instruction into 2, first copying **only** the `package.json` file and then
+the rest of the source files:
+
+```dockerfile
+FROM node:alpine
+WORKDIR /usr/app
+COPY ./package.json ./
+RUN npm install
+COPY ./ ./
+CMD ["npm", "start"]
+```
