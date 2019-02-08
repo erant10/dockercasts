@@ -557,3 +557,182 @@ RUN npm install
 COPY ./ ./
 CMD ["npm", "start"]
 ```
+
+
+## Section 5 - A more complicated application
+
+### App Overview
+
+Overview: we want to create a docker container that contains a web application that displays the number of times that 
+the server has been visited.
+
+We will make use of 2 components for this app:
+ 
+ - Node JS App - the infrastructure and logic of the app
+ 
+ - Redis - the DB in which to store the number of visits
+
+A possible approach would be to create a container for both components, however that is not a good idea when dealing 
+with increasing traffic.
+
+Traditionally we would **not** want to create multiple instances of a redis instance for a single app, instead, we 
+would want to create a single instance, and when we will want to scale, we will just scale up the node server and 
+make additional instances for it.
+  
+**index.js**
+
+```js
+const express = require('express');
+const redis = require('redis');
+const port = 8081;
+
+const app = express();
+const client = redis.createClient();
+client.set('visits', 0);
+
+app.get('/', (req,res) => {
+    client.get('visits', (err,visits) => {
+        res.send('Number of visits is ' + visits);
+        client.set('visits', parseInt(visits) + 1)
+    });
+});
+
+app.listen(port, () => {
+    console.log('listening on port ' + port)
+});
+```
+
+
+**Dockerfile**
+
+```dockerfile
+FROM node:alpine
+
+WORKDIR '/app'
+
+COPY package.json .
+RUN npm install
+COPY . .
+
+CMD ["npm","install"]
+```
+
+We need to setup some network infrastructure so that the node container may communicate with Redis.
+
+To do so, we can make use of the docker CLI, but that is not ideal since we have to re-run different commands every time
+we startup the containers. Which is  why we will make use of **Docker Compose**.
+
+### Docker Compose
+
+Docker Compose is a CLI tool **separate to Docker** which automates some long-winded arguments we were passing to 
+`docker run`. One of the big purposes of Docker Compose is that it makes it very easy to start multiple docker
+containers at the same time and automatically connect them together with some form of networking.
+
+We will create the `docker-compose.yml` which will contain some options that we would normally pass to docker CLI. 
+These options will eventually be parsed and translated to the long `docker run` command.
+
+* Docker-world side note: The term `services` is commonly used as a **type of container**.
+
+**docker-compose.yml**
+
+```yaml
+version: '3'
+
+services:
+  # create the 'redis' service (container)
+  redis-server:
+    # use the image 'redis' to create this service
+    image: 'redis'
+
+  # create the 'node-app' service (container)
+  node-app:
+    # use the Dockerfile in the current directory to create the 'node-app' service (container)
+    build: .
+    # specify the ports that we want to open
+    ports:
+      # connect port 8081 on the local machine to the port 8081 inside the container
+      - "4001:8081"
+```
+
+*note:* by using docker-compose to create the 2 containers, they will automatically have free access to one another 
+and can exchange as much information as they want.
+
+We can now use the name of the redis service to specify the redis "host" inside the `createClient`:
+
+**index.js**
+
+```js
+// ...
+const client = redis.createClient({
+    host: 'redis-server',
+    port: 6379 // default redis port
+});
+// ...
+```
+
+#### Docker compose commands
+
+- `docker-compose up`: start an image. 
+    
+    equivalent to:
+    
+    ```bash
+    docker run myimage
+    ```
+
+- `docker-compose up --build`: rebuild and start an image.
+    
+    equivalent to:
+    
+    ```bash
+    docker build .
+    docker run myimage
+    ```
+    
+    We would use the `--build` flag whenever we make any changes to the app.
+
+- `docker-compose up -d`: Launch containers in background.
+
+- `docker-compose down`: Stop all containers.
+
+- `docker-compose ps`: Print out the status of the containers inside of the docker-compose file (must be run from where
+the docker-compose is available).
+
+#### Docker-compose Restart Policy
+
+In case one of our containers crash, we might want to automatically restart them.
+
+*Side note about exit status codes*:
+    - status code 0 means we exited the process as intended (everything is OK).
+    - status code > 0 (1,2,3,...) means that we exited and something went wrong.    
+
+useful restart policies:
+
+- `"no"`: Never attempt to restart this container if it stops or crashes (the default policy).
+
+- `always`: If this container stops **for any reason**, always attempt to restart it.
+
+- `on-failure`: Only restart if the container stops with a specific error code.
+
+- `unless-stopped`: Always restart unless we (the developers) forcibly stop it.
+
+**docker-compose.yml**
+
+```yaml
+version: '3'
+
+services:
+  # create the 'redis' service (container)
+  redis-server:
+    # use the image 'redis' to create this service
+    image: 'redis'
+
+  # create the 'node-app' service (container)
+  node-app:
+    restart: on-failure
+    # use the Dockerfile in the current directory to create the 'node-app' service (container)
+    build: .
+    # specify the ports that we want to open
+    ports:
+      - "4001:8081"
+```

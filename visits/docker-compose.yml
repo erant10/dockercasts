@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  # create the 'redis' service (container)
+  redis-server:
+    # use the image 'redis' to create this service
+    image: 'redis'
+
+  # create the 'node-app' service (container)
+  node-app:
+    restart: on-failure
+    # use the Dockerfile in the current directory to create the 'node-app' service (container)
+    build: .
+    # specify the ports that we want to open
+    ports:
+      - "4001:8081"
