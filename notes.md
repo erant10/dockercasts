@@ -736,3 +736,148 @@ services:
     ports:
       - "4001:8081"
 ```
+
+
+## Section 6 - Creating a Production Grade WorkFlow
+
+### Development Workflow
+
+![workflow](./diagrams/06/workflow.png)
+
+Where does Docker come in?
+
+Docker is **NOT** a requirement to this development workflow. However it will make certain steps in this workflow a lot 
+easier.
+
+### Creating the Dev Dockerfile
+
+We will want to create 2 separate Dockerfiles - one for development (`Dockerfile.dev`), and another for production 
+(`Dockerfile`).
+
+**sidenote:** We can use the `-f <custom_name>` to run Dockerfiles with custom name.
+
+```dockerfile
+FROM node:alpine
+
+WORKDIR '/app'
+
+COPY package.json .
+RUN npm install
+
+COPY . .
+
+CMD ["npm", "run", "start"]
+```
+
+### Docker Volumes
+
+As in the previous section, we want any changes to the source files of the application to be propagated to the docker 
+container. 
+
+To do so, we are going to make use of a docker `Volume`. 
+
+With docker volume we do not copy over the entire `src` directory but instead, the volume is going to set up a reference
+that will point back to the files and folders on our local machine.
+
+The command we will use to run the container with volumes: `-v <directory_on_local_machine>:<directory_inside_container>`
+
+![volume_cmd](./diagrams/06/volume_cmd.png)
+
+`-v /app/node_modules` basically marks that the container should use the `node_modules` directory inside the container, 
+and **not** map it to the local machine.
+
+
+### docker-compose
+
+In order to simplify the ridiculously long `docker run` command we can once again make use of docker-compose:
+
+**docker-compose.yml**
+
+```yaml
+version: '3'
+
+services:
+  web:
+    build:
+      context: . # specify where the project files and folders should be pulled from
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - /app/node_modules
+      - .:/app
+```
+ 
+**Note:** Do we still need to execute `COPY` in the dockerfile? Essentially the answer is no, **however** at some point
+in the future (when we create the PROD dockerfile) we will definitely need to copy these source file (so it is a good 
+reminder to keep the `COPY` command).
+
+
+### Live updating tests
+
+We can create a container specifically to run tests by running: `docker run -it <image_id> npm run test`.
+
+However this container does not have any volumes set up, and any changes we make to our test suites will not update the
+container.
+
+One option is to reuse the existing container and executing a different command:
+
+```bash
+docker exec -it <image_id> npm run test
+```
+
+Another (better) option is to set up a second service with volumes:
+
+**docker-compose.yml**
+
+```yaml
+version: '3'
+
+services:
+  web:
+    build:
+      context: . # specify where the project files and folders should be pulled from
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - /app/node_modules
+      - .:/app
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - /app/node_modules
+      - .:/app
+    command: ["npm", "run", "test"]
+```
+
+
+### Nginx
+
+In the production environment, we would run `npm run build` which would create `index.htmk` and `main.js`, and then we 
+would want the prod server to respond to incoming requests with these files.
+
+To do so, we are going to make use of **Nginx** which is a web server that routes incoming traffic with some **static** 
+files.
+
+We will create a **separate** Dockerfile, that will create a production version of our web container which will startup 
+an Nginx instance whose main purpose will be to serve up the `index.htmk` and `main.js` files.
+
+![multi](./diagrams/06/multi.png)
+
+```dockerfile
+# Tag the phase with a name
+FROM node:alpine as builder
+WORKDIR '/app'
+COPY package.json .
+COPY . .
+RUN npm run build
+
+# app static files inside /app/build
+
+FROM nginx
+# Copy the result from the builder stage
+COPY --from=builder /app/build /usr/share/nginx/html
+```
