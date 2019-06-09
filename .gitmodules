@@ -1,0 +1,3 @@
+[submodule "docker-react"]
+	path = docker-react
+	url = https://erant11@bitbucket.org/erant11/docker-react.git
