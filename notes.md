@@ -881,3 +881,99 @@ FROM nginx
 # Copy the result from the builder stage
 COPY --from=builder /app/build /usr/share/nginx/html
 ```
+
+
+## Section 7 - Continuous Integration and Deployment with AWS 
+
+In order to use the production-grade workflow we will want to integrate our `docker-react` repository (previously named
+`frontend`) with **TravisCI**.
+
+Essentially with every push our code up to github, we will want TravisCI to:
+
+1. Perform tests on the new code
+
+2. If all the tests pass - deploy the code to AWS.
+
+We need to specify the following instructions inside of the `travis.yaml` file:
+
+- Tell Travis we need a copy of docker running
+
+- Build our image using Dockerfile.dev
+
+- Tell Travis how to run our test suite
+
+- Tell Travis how to deploy our code to AWS
+
+**.travis.yml**
+
+```yaml
+sudo: required # we need super user permissions anytime we make use of Docker
+
+services:
+  - docker # 1. Tell Travis we need a copy of docker running
+
+before_install:
+  - docker build -t erant10/docker-react -f Dockerfile.dev . # 2. Build our image using Dockerfile.dev
+
+script:
+  - docker run erant10/docker-react npm run test -- --coverage # 3. Tell Travis how to run our test suite
+```
+
+### AWS Services
+
+#### Elastic Beanstalk
+
+Elastic Beanstalk is the easiest way to get started with production docker instances and it is most appropriate when 
+trying to run at most 1 container at a time.
+
+When creating an app with Elastic Beanstalk it come with a load balancer that route requests to a VM that is running 
+our application with Docker while scaling up and adding VMs to handle the traffic.
+
+#### S3 
+
+Amazon Simple Storage Service.  
+
+When creating an Elastic Beanstalk application, an S3 bucket is created with the same name of the app.
+
+This bucket will contain the files and resources needed for the app.
+
+#### IAM
+
+Identity and Access Management. 
+
+The IAM service can be used to manage API keys that will be used by outside services (TravisCI in our case).
+
+Once we create a new user using the IAM service, will have the `accessKey` and `secretAccessKey`. 
+
+**Important note**: We do **NOT** want to put our AWS keys in the github repository, especially if the repo is public.
+
+Instead we will use the "environment secrets" feature from travis CI.
+
+Finally our `.travis.yml` file will look like so
+
+```yaml
+sudo: required # we need super user permissions anytime we make use of Docker
+
+services:
+  - docker # 1. Tell Travis we need a copy of docker running
+
+before_install:
+  - docker build -t erant10/docker-react -f Dockerfile.dev . # 2. Build our image using Dockerfile.dev
+
+script:
+  - docker run erant10/docker-react npm run test -- --coverage # 3. Tell Travis how to run our test suite
+
+#4. Tell Travis how to deploy our code to AWS
+deploy:
+  provider: elasticbeanstalk
+  region: "us-east-2"
+  app: "docker-react"
+  env: "DockerReact-env"
+  bucket_name: "elasticbeanstalk-us-east-2-381207684223"
+  bucket_path: "docker-react"
+  on:
+    branch: master # only deploy when master branch is modified
+  access_key_id: $AWS_ACCESS_KEY
+  secret_access_key:
+    secure: "$AWS_SECRET_KEY"
+``` 
