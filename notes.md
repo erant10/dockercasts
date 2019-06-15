@@ -977,3 +977,27 @@ deploy:
   secret_access_key:
     secure: "$AWS_SECRET_KEY"
 ``` 
+
+
+## Section 8 Building a Multi-container Application
+
+### Basic DEV architecture - Fibonacci Calculator
+
+![architecture](diagrams/08/architecture.png)
+
+- **Nginx**: the server that will serve assets to the browser
+
+- **Express**: The API server that will fetch and send data to the backend
+
+- **React**: Server that will serve the front end assets
+
+- **PostreSQL**: an SQL Database which will store the "seen" values
+
+- **Redis**: An in memory DB which will store the calculated values
+
+- **Worker**: NodeJS Server that watches Redis for new indices and calculates a value when a new number is seen
+
+
+
+
+
