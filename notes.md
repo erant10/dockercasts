@@ -1144,3 +1144,33 @@ server {
 }
 ```
 
+
+## Section 10 - A Continuous Integration Workflow for Multiple Images
+
+On single container deployment setup, we had Elastic Beanstalk build our code, which was not a very good approach 
+because we were building everything far more often than it had to be. In addition we were relying upon a running web 
+server to download a bunch of dependencies and build an image.
+
+On the multi-container deployment setup we will user the following flow:
+
+1. Push code to github
+
+1. Travis automatically pulls repo
+
+1. Travis builds a test image, tests code
+
+1. Travis builds prod images
+
+1. Travis pushes built prod images to Docker Hub
+
+1. Travis pushes project to AWS EB
+
+1. EB pulls images from Docker Hub, deploys
+
+
+**Note on Nginx**:
+
+On the single container layout, we had an Nginx serve up the front end assets (index.html, main.js etc).
+On the multi container layout, we will need an Nginx server that is responsible for *Routing* in addition to the 
+server that is responsible for serving the files.
+
