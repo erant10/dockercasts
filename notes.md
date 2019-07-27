@@ -998,6 +998,149 @@ deploy:
 - **Worker**: NodeJS Server that watches Redis for new indices and calculates a value when a new number is seen
 
 
+## Section 9 - "Dockerizing" multiple Services
+
+We need to make **dev** Dockerfiles for the React App, the Express server, and the Worker.
+
+ The Dockerfile will: 
+ 
+ 1. Copy over the package.json onto a base image
+ 
+ 2. Run `npm install`
+ 
+ 3. copy over everything else
+ 
+ 4. use docker compose to set a volume
+ 
+**client/dockerfile.dev**
+```Dockerfile
+FROM node:alpine
+WORKDIR '/app'
+COPY ./package.json ./
+RUN npm install
+COPY . .
+CMD ["npm", "run", "start"] 
+```
+
+Now we can create the image using `docker build -f Dockerfile.dev .` and run it with `docker run <image_id>`
+
+**server/dockerfile.dev, worker/dockerfile.dev**
+```Dockerfile
+FROM node:alpine
+WORKDIR '/app'
+COPY ./package.json ./
+RUN npm install
+COPY . .
+CMD ["npm", "run", "dev"] 
+```
+
+Now we need to create a `docker-compose` file.
+
+Just as a reminder - we use docker-compose to simplify the way we start up the image.
+
+For example, we need to expose the correct port, and assure that the environment variables needed to connect to redis 
+and postgres are provided to whoever needs them.
+
+on our dev server we will have a complete copy of redis, postgres and the express server.
+
+**docker-compose.yml**
+
+```yaml
+version: '3'
+services:
+  postgres:
+    image: 'postgres:latest'
+
+  redis:
+    image: 'redis:latest'
+
+  nginx:
+    restart: always # make sure nginx is always available
+    build:
+      dockerfile: Dockerfile.dev
+      context: ./nginx
+    ports:
+      - '3050:80'
+
+  api:
+    build:
+      dockerfile: Dockerfile.dev
+      context: ./server
+    volumes:
+      - /app/node_modules
+      - ./server:/app
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PGUSER=postgres
+      - PGHOST=postgres
+      - PGDATABASE=postgres
+      - PGPASSWORD=postgres_password
+      - PGPORT=5432
+    depends_on:
+      - postgres
+
+  client:
+    build:
+      dockerfile: Dockerfile.dev
+      context: ./client
+    volumes:
+      - /app/node_modules
+      - ./client:/app
+
+  worker:
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    build:
+      dockerfile: Dockerfile.dev
+      context: ./worker
+    volumes:
+      - /app/node_modules
+      - ./worker:/app
+```
+
+*reminder*: by setting up the volumes for the server service, whenever the application tries to access anything inside
+the container (except for the node_modules folder) it will be redirected to the server directory on the host machine.
+
+**Note on Nginx**: Nginx will provide us with infrastructure to differentiate between requests sent to the react server
+and requests sent to the express server.
+
+![nginx](./diagrams/08/nginx.png)
+
+We can set up the nginx routing rules using the `default.conf` file:
+
+**default.conf**
+
+```text
+upstream client {
+  server client:3000;
+}
+
+upstream api {
+  server api:5000;
+}
+
+server {
+  listen 80;
+
+  location / {
+    proxy_pass http://client;
+  }
+  
+  # allow continuous socket connection to react server (to reload browser when source code changes)
+  location /sockjs-node {
+    proxy_pass http://client;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+  }
 
 
+  location /api {
+    rewrite /api/(.*) /$1 break;
+    proxy_pass http://api;
+  }
+}
+```
 
