@@ -1,3 +1,6 @@
 [submodule "docker-react"]
 	path = docker-react
 	url = https://erant11@bitbucket.org/erant11/docker-react.git
+[submodule "complex"]
+	path = complex
+	url = https://erant11@bitbucket.org/erant11/complex.git
